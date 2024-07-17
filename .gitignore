@@ -130,8 +130,6 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-
-
 ## PyCharm
 
 .idea/
@@ -139,5 +137,9 @@ dmypy.json
 ## Mac
 .DS_Store
 
-
 # Project specific directories and files
+Resources/
+Project/datasets/KITTI
+Project/datasets/NYUv2
+Project/datasets/HaND/raw
+Project/calibration/data/
