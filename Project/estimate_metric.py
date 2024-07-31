@@ -24,6 +24,21 @@ Citation:
 GitHub: https://github.com/DepthAnything/Depth-Anything-V2
 """
 
+classes = {
+    0: 'bottle',
+    1: 'bowl_close',
+    2: 'bowl_far',
+    3: 'clock',
+    4: 'cup_close',
+    5: 'cup_far',
+    6: 'hand_close',
+    7: 'hand_far',
+    8: 'hand_medium',
+    9: 'plant',
+    10: 'glass_close',
+    11: 'glass_far'
+}
+
 # region Imports
 import sys
 from pathlib import Path
@@ -43,12 +58,11 @@ for m in modules:
         print(f"{path} already exists in sys.path")
 
 
-import argparse
 import cv2
-import glob
 import matplotlib
 import numpy as np
 import os
+import csv
 import torch
 import open3d as o3d
 
@@ -92,6 +106,7 @@ class DepthEstimator:
         input = self.preprocess(image)
         with torch.no_grad():
             depth = self.model.infer_image(input, input_size=518)
+        print(depth.shape)
         return depth
 
     def visualize_depth(self, image, depth, grayscale):
@@ -137,6 +152,80 @@ class DepthEstimator:
         o3d.io.write_point_cloud(out_path, pcd)
         print(f'Point cloud saved to {out_path}')
 
+    def target_depth(self, label_file, depth_map):
+        """
+        Extract depth from a target ROI (e.g. bounding box).
+
+        Parameters:
+        label_file (str): Path to the YOLO format label file
+        depth_map (np.array): The depth map of the image
+
+        Returns:
+        float: The average error between the predicted mean depth and the true depth across all bounding boxes
+        """
+        height, width = depth_map.shape[:2] # if depth_map.shape == frame.shape[:2]
+        total_error = 0
+        count = 0
+
+        # Read YOLO labels from the file
+        with open(label_file, 'r') as f:
+            lines = f.readlines()
+
+        # Store results for CSV output
+        results = []
+
+        for line in lines:
+            parts = line.strip().split()
+            # YOLO format: class x_center y_center width height (all normalized 0-1)
+            # Here, we assume the true depth is also given in the label (for demonstration purposes)
+            class_id, x_center, y_center, bbox_width, bbox_height, true_depth = map(float, parts)
+            
+            # Convert normalized coordinates to absolute pixel values
+            x_center *= width
+            y_center *= height
+            bbox_width *= width
+            bbox_height *= height
+
+            x = int(x_center - bbox_width / 2)
+            y = int(y_center - bbox_height / 2)
+            w = int(bbox_width)
+            h = int(bbox_height)
+
+            # Ensure the bounding box coordinates are within the image dimensions
+            x_start = max(x, 0)
+            y_start = max(y, 0)
+            x_end = min(x + w, depth_map.shape[1])
+            y_end = min(y + h, depth_map.shape[0])
+
+            # Extract the ROI from the depth map
+            roi_depth = depth_map[y_start:y_end, x_start:x_end]
+
+            # Calculate the mean depth within the ROI
+            mean_depth = np.mean(roi_depth)
+
+            # Calculate the absolute difference between the mean depth and the true depth
+            depth_difference = abs(mean_depth - true_depth)
+
+            # Accumulate the error and count
+            total_error += depth_difference
+            count += 1
+
+            # Print the mean depth and compare it with the true depth
+            print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
+            print(f"True Depth: {true_depth}")
+            print(f"Mean Depth: {mean_depth}")
+            print(f"Depth Difference: {depth_difference}\n")
+
+            # Store result for CSV output
+            results.append([os.path.splitext(os.path.basename(label_file))[0], classes[class_id], mean_depth, true_depth])
+
+        # Calculate the average error
+        average_error = total_error / count if count != 0 else 0
+
+        # Print and return the average error
+        print(f"Average Error: {average_error}")
+        return average_error, results
+
 
 def main():
 
@@ -154,16 +243,24 @@ def main():
         device='cpu' # change dpt.py line 220 to use 'cuda'
     )
 
+    # Initialize CSV file
+    csv_file = 'estimated_depths.csv'
+    with open(csv_file, mode='w', newline='') as f:
+        writer = csv.writer(f)
+        writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth'])
+
     # Load DS
-    ds = os.listdir('./datasets/HaND_augmented/images/')
-    outdir = './datasets/HaND_augmented/visualization/pointclouds/'
-    n = len(ds)
+    ds = './datasets/HaND_augmented/'
+    images = os.listdir(ds+'images/')
+    labeldir = ds+'labels/'
+    outdir = ds+'visualization/pointclouds/'
+    n = len(images)
     
     # Loop over testing data
-    for i, file in enumerate(ds):
+    for i, file in enumerate(images):
 
         # Read the image
-        frame = cv2.imread('datasets/HaND_augmented/images/' + file)
+        frame = cv2.imread(ds + 'images/' + file)
         
         if frame is None:
             print(f"Failed to load image: {file}")
@@ -178,8 +275,14 @@ def main():
 
         # Perform depth estimation
         depth = depth_estimator.predict_depth(frame)
+        average_error, results = depth_estimator.target_depth(labeldir + file[:-3] + 'txt', depth)
+
+        # Append results to CSV
+        with open(csv_file, mode='a', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerows(results)
+
         visual = depth_estimator.visualize_depth(frame, depth, False)
-        #depth_estimator.create_point_cloud(frame, depth, file, outdir)
         print(f'\nDepth Image {i+1}/{n}, Min = {depth.min()}, Max = {depth.max()}')
         cv2.imshow("Depth map", visual)
         if cv2.waitKey(100) & 0xFF == ord('q'):
