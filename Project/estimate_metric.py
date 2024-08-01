@@ -202,7 +202,7 @@ class DepthEstimator:
             print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file))[0], classes[class_id], mean_depth, true_depth])
+            results.append([os.path.splitext(os.path.basename(label_file[:-44]))[0], classes[class_id], mean_depth, true_depth])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
