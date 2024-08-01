@@ -245,7 +245,7 @@ def main():
 
     # Load DE model
     depth_estimator = DepthEstimator(
-        model_type = 'midas_v21_small_256', #  midas_v21_small_256, dpt_levit_224, dpt_swin2_tiny_256, dpt_large_384, dpt_beit_large_512, (midas_v21_384, dpt_hybrid_384, dpt_swin2_large_384)
+        model_type = 'midas_v21_small_256', #  midas_v21_small_256, dpt_levit_224 (downgrade to timm==0.6.12), dpt_swin2_tiny_256 (downgrade to timm == 0.9.7 -> 0.6.12), dpt_large_384, dpt_beit_large_512, (midas_v21_384, dpt_hybrid_384, dpt_swin2_large_384)
         device='cpu'
     )
 
