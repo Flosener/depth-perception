@@ -1,7 +1,7 @@
 """
 MIT License
 
-Copyright (c) 2019 Intel ISL (Intel Intelligent Systems Lab)
+Copyright (c) 2022 Intelligent Systems Lab Org
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -22,16 +22,18 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 Citation:
-@ARTICLE {Ranftl2022,
-    author  = "Ren\'{e} Ranftl and Katrin Lasinger and David Hafner and Konrad Schindler and Vladlen Koltun",
-    title   = "Towards Robust Monocular Depth Estimation: Mixing Datasets for Zero-Shot Cross-Dataset Transfer",
-    journal = "IEEE Transactions on Pattern Analysis and Machine Intelligence",
-    year    = "2022",
-    volume  = "44",
-    number  = "3"
+@misc{https://doi.org/10.48550/arxiv.2302.12288,
+  doi = {10.48550/ARXIV.2302.12288},
+  url = {https://arxiv.org/abs/2302.12288},
+  author = {Bhat, Shariq Farooq and Birkl, Reiner and Wofk, Diana and Wonka, Peter and Müller, Matthias},
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  title = {ZoeDepth: Zero-shot Transfer by Combining Relative and Metric Depth},
+  publisher = {arXiv},
+  year = {2023},
+  copyright = {arXiv.org perpetual, non-exclusive license}
 }
 
-GitHub: https://github.com/isl-org/MiDaS
+GitHub: https://github.com/isl-org/MiDaS, https://github.com/isl-org/ZoeDepth
 """
 
 classes = {
@@ -67,24 +69,22 @@ for m in modules:
     elif str(path) in sys.path:
         print(f"{path} already exists in sys.path")
 
-
 import cv2
 import numpy as np
 import os
 import csv
 import torch
 import open3d as o3d
-import requests
-
-from MiDaS.midas.model_loader import load_model
-from MiDaS.run import create_side_by_side, process
+from PIL import Image
+from MiDaS.run import create_side_by_side
+from MiDaS.ZoeDepth.zoedepth.utils.misc import colorize
 # endregion
 
 class DepthEstimator:
     def __init__(self, model_type, device=None):
         self.device = self.get_device(device)
         self.model_type = model_type
-        self.model, self.transform, self.net_w, self.net_h = self.load_model()
+        self.model = self.load_model()
     
     def get_device(self, device):
         if device in ['cpu', 'cuda', 'mps']:
@@ -95,52 +95,19 @@ class DepthEstimator:
         return torch.device("cpu")
     
     def load_model(self):
-        # Load model weights
-        path = f'./MiDaS/weights/{self.model_type}.pt'
-        if not os.path.exists(path):
-            print("File does not exist. Downloading weights...")
-            # Get version from model type
-            if 'v21' in self.model_type:
-                version = 'v2_1'
-            elif self.model_type == 'dpt_large_384' or self.model_type == 'dpt_hybrid_384':
-                version = 'v3'
-            else:
-                print('Fallback to latest version V3.1 (May 2024).')
-                version = 'v3_1'
-            # Create and download from URL
-            url = f'https://github.com/isl-org/MiDaS/releases/download/{version}/{self.model_type}.pt'
-            response = requests.get(url)
-            if response.status_code == 200:
-                with open(path, 'wb') as file:
-                    file.write(response.content)
-                print("Weights downloaded successfully!")
-            else:
-                print("Failed to download weights file. Status code:", response.status_code)
-        else:
-            print("Weights already exists!")
-        weights = f'./MiDaS/weights/{self.model_type}.pt'
-
-        # Load model
-        model, transform, net_w, net_h = load_model(self.device, weights, self.model_type, optimize=False, height=640, square=False)
+        model = torch.hub.load("isl-org/ZoeDepth", self.model_type, pretrained=True)
         model.to(self.device)
-        return model, transform, net_w, net_h
+        return model
     
     def preprocess(self, image):
-        print(image.shape, image.min(), image.max())
-        if image.max() > 1:
-            image = np.flip(image, 2)  # in [0, 255] (flip required to get RGB)
-            image = image/255
-            print(image.shape, image.min(), image.max())
-        image = self.transform({"image": image})["image"]
-        print(image.shape, image.min(), image.max())
+        image = Image.open(image).convert("RGB")
         return image
     
     def predict_depth(self, image):
         self.model.eval()
         input = self.preprocess(image)
         with torch.no_grad():
-            depth = process(self.device, self.model, self.model_type, input, (self.net_w, self.net_h),
-                                image.shape[1::-1], False, True)
+            depth = self.model.infer_pil(input)
         return depth
 
     def visualize_depth(self, image, depth, grayscale):
@@ -255,7 +222,7 @@ def main():
 
     # Load DE model
     depth_estimator = DepthEstimator(
-        model_type = 'midas_v21_small_256', #  midas_v21_small_256, dpt_levit_224 (downgrade to timm==0.6.12), dpt_swin2_tiny_256 (downgrade to timm == 0.9.7 -> 0.6.12), dpt_large_384, dpt_beit_large_512, (midas_v21_384, dpt_hybrid_384, dpt_swin2_large_384)
+        model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
         device='cpu'
     )
 
@@ -269,7 +236,7 @@ def main():
     ds = './datasets/HaND_augmented/'
     images = os.listdir(ds+'images/')
     labeldir = ds+'labels/'
-    outdir = ds+'visualization/pointclouds/'
+    outdir = ds+'visualization/'
     n = len(images)
     
     # Loop over testing data
@@ -290,7 +257,7 @@ def main():
         #detections = 
 
         # Perform depth estimation
-        depth = depth_estimator.predict_depth(frame)
+        depth = depth_estimator.predict_depth(ds + 'images/' + file)
         average_error, results = depth_estimator.target_depth(labeldir + file[:-3] + 'txt', depth)
 
         # Append results to CSV
@@ -300,6 +267,7 @@ def main():
 
         visual = depth_estimator.visualize_depth(frame, depth, False)
         print(f'\nDepth Image {i+1}/{n}, Min = {depth.min()}, Max = {depth.max()}')
+        #depth_estimator.create_point_cloud(frame, depth, file[:-40], outdir)
         cv2.imshow("Depth map", visual)
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
