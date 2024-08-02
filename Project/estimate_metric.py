@@ -109,7 +109,7 @@ class DepthEstimator:
         print(depth.shape)
         return depth
 
-    def visualize_depth(self, image, depth, grayscale):
+    def visualize_depth(self, image, depth, grayscale, name=None, outdir=None):
         h,w = image.shape[:2]
 
         depth_normalized = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
@@ -126,9 +126,16 @@ class DepthEstimator:
         else:
             split_region = np.ones((h, 20, 3), dtype=np.uint8) * 255
             combined_frame = cv2.hconcat([image, split_region, depth_colored])
+            # Save to output directory if specified
+            if outdir is not None and name is not None:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                output_path = os.path.join(outdir, name[:-41]+'.png')
+                cv2.imwrite(output_path, combined_frame)
+                print(f'Saved depth visualization to {output_path}')
             return combined_frame
         
-    def create_point_cloud(self, image, depth_map, name, outdir):
+    def create_point_cloud(self, image, depth_map, name=None, outdir=None):
         """
         Code by @ Subhransu Sekhar Bhattacharjee (Rudra) "1ssb"
         """
@@ -147,8 +154,10 @@ class DepthEstimator:
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(points)
         pcd.colors = o3d.utility.Vector3dVector(colors)
+        # Plot point cloud
+        #o3d.visualization.draw_geometries([pcd])
 
-        out_path = os.path.join(outdir, f'{name}_point_cloud.ply')
+        out_path = os.path.join(outdir, f'{name[:-41]}.ply')
         o3d.io.write_point_cloud(out_path, pcd)
         print(f'Point cloud saved to {out_path}')
 
@@ -217,7 +226,7 @@ class DepthEstimator:
             print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file))[0], classes[class_id], mean_depth, true_depth])
+            results.append([os.path.splitext(os.path.basename(label_file[:-39]))[0], classes[class_id], mean_depth, true_depth])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
@@ -228,12 +237,6 @@ class DepthEstimator:
 
 
 def main():
-
-    # Load OD models
-    weights_objects = './yolov5/yolov5x.pt'
-    weights_hands = './yolov5/hand.pt'
-    od_model_objs = torch.hub.load('ultralytics/yolov5', 'custom', path=weights_objects).eval()
-    od_model_hands = torch.hub.load('ultralytics/yolov5', 'custom', path=weights_hands).eval()
 
     # Load DE model
     depth_estimator = DepthEstimator(
@@ -253,7 +256,7 @@ def main():
     ds = './datasets/HaND_augmented/'
     images = os.listdir(ds+'images/')
     labeldir = ds+'labels/'
-    outdir = ds+'visualization/pointclouds/'
+    outdir = ds+'visualization/'
     n = len(images)
     
     # Loop over testing data
@@ -266,13 +269,6 @@ def main():
             print(f"Failed to load image: {file}")
             continue
 
-        # Perform object detection
-        #rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        #detections_objs = od_model_objs(frame)
-        #detections_hands = od_model_hands(frame)
-        # combine detections
-        #detections = 
-
         # Perform depth estimation
         depth = depth_estimator.predict_depth(frame)
         average_error, results = depth_estimator.target_depth(labeldir + file[:-3] + 'txt', depth)
@@ -282,9 +278,10 @@ def main():
             writer = csv.writer(f)
             writer.writerows(results)
 
-        visual = depth_estimator.visualize_depth(frame, depth, False)
+        visual = depth_estimator.visualize_depth(frame, depth, False, file[:-3], outdir+'depthmaps/')
         print(f'\nDepth Image {i+1}/{n}, Min = {depth.min()}, Max = {depth.max()}')
         cv2.imshow("Depth map", visual)
+        depth_estimator.create_point_cloud(frame, depth, file[:-3], outdir+'pointclouds/')
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
 
