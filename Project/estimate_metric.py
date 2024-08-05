@@ -65,9 +65,11 @@ import os
 import csv
 import torch
 import open3d as o3d
+import time
 
 from depthanythingv2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2
 # endregion
+
 
 class DepthEstimator:
     def __init__(self, encoder, dataset='hypersim', max_depth=20, device=None):
@@ -105,11 +107,13 @@ class DepthEstimator:
         self.model.eval()
         input = self.preprocess(image)
         with torch.no_grad():
+            start = time.time()
             depth = self.model.infer_image(input, input_size=518)
-        print(depth.shape)
-        return depth
+            end = time.time()
+        inference_time = end - start
+        return depth, inference_time
 
-    def visualize_depth(self, image, depth, grayscale, name=None, outdir=None):
+    def create_depthmap(self, image, depth, grayscale, name=None, outdir=None):
         h,w = image.shape[:2]
 
         depth_normalized = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
@@ -135,7 +139,7 @@ class DepthEstimator:
                 print(f'Saved depth visualization to {output_path}')
             return combined_frame
         
-    def create_point_cloud(self, image, depth_map, name=None, outdir=None):
+    def create_pointcloud(self, image, depth_map, name=None, outdir=None):
         """
         Code by @ Subhransu Sekhar Bhattacharjee (Rudra) "1ssb"
         """
@@ -161,7 +165,7 @@ class DepthEstimator:
         o3d.io.write_point_cloud(out_path, pcd)
         print(f'Point cloud saved to {out_path}')
 
-    def target_depth(self, label_file, depth_map):
+    def create_csv(self, label_file, depth_map, time):
         """
         Extract depth from a target ROI (e.g. bounding box).
 
@@ -186,7 +190,6 @@ class DepthEstimator:
         for line in lines:
             parts = line.strip().split()
             # YOLO format: class x_center y_center width height (all normalized 0-1)
-            # Here, we assume the true depth is also given in the label (for demonstration purposes)
             class_id, x_center, y_center, bbox_width, bbox_height, true_depth = map(float, parts)
             
             # Convert normalized coordinates to absolute pixel values
@@ -209,7 +212,7 @@ class DepthEstimator:
             # Extract the ROI from the depth map
             roi_depth = depth_map[y_start:y_end, x_start:x_end]
 
-            # Calculate the mean depth within the ROI
+            # Calculate the mean depth within the ROI (method should probably be changed later)
             mean_depth = np.mean(roi_depth)
 
             # Calculate the absolute difference between the mean depth and the true depth
@@ -226,7 +229,7 @@ class DepthEstimator:
             print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file[:-39]))[0], classes[class_id], mean_depth, true_depth])
+            results.append([os.path.splitext(os.path.basename(label_file[:-44]))[0], classes[class_id], mean_depth, true_depth, time])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
@@ -270,18 +273,18 @@ def main():
             continue
 
         # Perform depth estimation
-        depth = depth_estimator.predict_depth(frame)
-        average_error, results = depth_estimator.target_depth(labeldir + file[:-3] + 'txt', depth)
+        depth, inference_time = depth_estimator.predict_depth(frame)
+        average_error, results = depth_estimator.create_csv(labeldir + file[:-3] + 'txt', depth, inference_time)
 
         # Append results to CSV
         with open(csv_file, mode='a', newline='') as f:
             writer = csv.writer(f)
             writer.writerows(results)
 
-        visual = depth_estimator.visualize_depth(frame, depth, False, file[:-3], outdir+'depthmaps/')
+        visual = depth_estimator.create_depthmap(frame, depth, False, file[:-3], outdir+'depthmaps/')
         print(f'\nDepth Image {i+1}/{n}, Min = {depth.min()}, Max = {depth.max()}')
         cv2.imshow("Depth map", visual)
-        depth_estimator.create_point_cloud(frame, depth, file[:-3], outdir+'pointclouds/')
+        depth_estimator.create_pointcloud(frame, depth, file[:-3], outdir+'pointclouds/')
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
 
