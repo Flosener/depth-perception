@@ -242,15 +242,17 @@ class DepthEstimator:
 def main():
 
     # Load DE model
+    encoder = 'vitb'
+    depth_dataset = 'hypersim'
     depth_estimator = DepthEstimator(
-        encoder='vitb',
-        dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
+        encoder=encoder,
+        dataset=depth_dataset, # 'hypersim' for indoor model, 'vkitti' for outdoor model
         max_depth=20, # 20 for indoor model, 80 for outdoor model
-        device='cpu' # change dpt.py line 220 to use 'cuda'
+        device='cuda' # change dpt.py line 220 to use 'cuda'
     )
 
     # Initialize CSV file
-    csv_file = 'estimated_depths.csv'
+    csv_file = f'estimated_depths_{encoder}_{depth_dataset}.csv'
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth'])
@@ -259,7 +261,7 @@ def main():
     ds = './datasets/HaND_augmented/'
     images = os.listdir(ds+'images/')
     labeldir = ds+'labels/'
-    outdir = ds+'visualization/'
+    outdir = ds+f'visualization/{encoder}_{depth_dataset}'
     n = len(images)
     
     # Loop over testing data
