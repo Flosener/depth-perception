@@ -1,27 +1,39 @@
 """
-Copyright 2024 Lihe Yang
+MIT License
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+Copyright (c) 2022 Intelligent Systems Lab Org
 
-       http://www.apache.org/licenses/LICENSE-2.0
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 Citation:
-@article{depth_anything_v2,
-  title={Depth Anything V2},
-  author={Yang, Lihe and Kang, Bingyi and Huang, Zilong and Zhao, Zhen and Xu, Xiaogang and Feng, Jiashi and Zhao, Hengshuang},
-  journal={arXiv:2406.09414},
-  year={2024}
+@misc{https://doi.org/10.48550/arxiv.2302.12288,
+  doi = {10.48550/ARXIV.2302.12288},
+  url = {https://arxiv.org/abs/2302.12288},
+  author = {Bhat, Shariq Farooq and Birkl, Reiner and Wofk, Diana and Wonka, Peter and Müller, Matthias},
+  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
+  title = {ZoeDepth: Zero-shot Transfer by Combining Relative and Metric Depth},
+  publisher = {arXiv},
+  year = {2023},
+  copyright = {arXiv.org perpetual, non-exclusive license}
 }
 
-GitHub: https://github.com/DepthAnything/Depth-Anything-V2
+GitHub: https://github.com/isl-org/MiDaS, https://github.com/isl-org/ZoeDepth
 """
 
 classes = {
@@ -46,7 +58,7 @@ from pathlib import Path
 # Use the project file packages instead of the conda packages, i.e. add to system path for import
 file = Path(__file__).resolve()
 root = file.parents[0]
-modules = ['depthanythingv2']
+modules = ['MiDaS']
 for m in modules:
     path = root / m
     if path.exists() and str(path) not in sys.path:
@@ -58,30 +70,21 @@ for m in modules:
         print(f"{path} already exists in sys.path")
 
 import cv2
-import matplotlib
 import numpy as np
 import os
 import csv
 import torch
 import open3d as o3d
-import time
-
-from depthanythingv2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2
+from PIL import Image
+from MiDaS.run import create_side_by_side
+from MiDaS.ZoeDepth.zoedepth.utils.misc import colorize
 # endregion
 
 
 class DepthEstimator:
-    def __init__(self, encoder, dataset='hypersim', max_depth=20, device=None):
+    def __init__(self, model_type, device=None):
         self.device = self.get_device(device)
-        self.encoder = encoder if encoder in ['vits', 'vitb', 'vitl', 'vitg'] else 'vitb'
-        self.configs = {
-        'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
-        'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
-        'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
-        'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
-        }
-        self.dataset = dataset
-        self.max_depth = max_depth # 20 for indoor model, 80 for outdoor model
+        self.model_type = model_type
         self.model = self.load_model()
     
     def get_device(self, device):
@@ -93,51 +96,32 @@ class DepthEstimator:
         return torch.device("cpu")
     
     def load_model(self):
-        model = DepthAnythingV2(**{**self.configs[self.encoder], 'max_depth': self.max_depth})
-        model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_v2_metric_{self.dataset}_{self.encoder}.pth', map_location=self.device))
+        model = torch.hub.load("isl-org/ZoeDepth", self.model_type, pretrained=True)
         model.to(self.device)
         return model
     
     def preprocess(self, image):
-        # pre-processing already done in infer_image()
+        image = Image.open(image).convert("RGB")
         return image
     
     def predict_depth(self, image):
         self.model.eval()
-        print(f'Device: {self.model.device}')
+        print(f'Device: {self.device}')
         input = self.preprocess(image)
         with torch.no_grad():
-            start = time.time()
-            depth = self.model.infer_image(input, input_size=518)
-            end = time.time()
-        inference_time = end - start
-        return depth, inference_time
+            depth = self.model.infer_pil(input)
+        return depth
 
     def create_depthmap(self, image, depth, grayscale, name=None, outdir=None):
-        h,w = image.shape[:2]
-
-        depth_normalized = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
-        depth_normalized = depth_normalized.astype(np.uint8)
-
-        if grayscale:
-            depth_colored = np.repeat(depth_normalized[..., np.newaxis], 3, axis=-1)
-        else:
-            cmap = matplotlib.colormaps.get_cmap('Spectral_r')
-            depth_colored = (cmap(depth_normalized)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
-
-        if depth_colored is None:
-            return image
-        else:
-            split_region = np.ones((h, 20, 3), dtype=np.uint8) * 255
-            combined_frame = cv2.hconcat([image, split_region, depth_colored])
-            # Save to output directory if specified
-            if outdir is not None and name is not None:
-                if not os.path.exists(outdir):
-                    os.makedirs(outdir)
-                output_path = os.path.join(outdir, name[:-41]+'.png')
-                cv2.imwrite(output_path, combined_frame)
-                print(f'Saved depth visualization to {output_path}')
-            return combined_frame
+        combined_frame = create_side_by_side(image, depth, grayscale) / 255
+        # Save to output directory if specified
+        if outdir is not None and name is not None:
+            if not os.path.exists(outdir):
+                os.makedirs(outdir)
+            output_path = os.path.join(outdir, name[:-41]+'.png')
+            cv2.imwrite(output_path, combined_frame)
+            print(f'Saved depth visualization to {output_path}')
+        return combined_frame
         
     def create_pointcloud(self, image, depth_map, name=None, outdir=None):
         """
@@ -245,17 +229,15 @@ class DepthEstimator:
 def main():
 
     # Load DE model
-    encoder = 'vits'
-    depth_dataset = 'hypersim'
+    encoder = 'vitl'
+    depth_dataset = 'vkitti'
     depth_estimator = DepthEstimator(
-        encoder=encoder,
-        dataset=depth_dataset, # 'hypersim' for indoor model, 'vkitti' for outdoor model
-        max_depth=20, # 20 for indoor model, 80 for outdoor model
-        device='cuda' # change dpt.py line 220 to use 'cpu' instead of not supported 'mps'
+        model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
+        device='cpu'
     )
 
     # Initialize CSV file
-    csv_file = f'./data/estimated_depths_{encoder}_{depth_dataset}.csv'
+    csv_file = f'./data/estimated_depths_zoe_{encoder}_{depth_dataset}.csv'
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth'])
@@ -264,7 +246,7 @@ def main():
     ds = './datasets/HaND_augmented/'
     images = os.listdir(ds+'images/')
     labeldir = ds+'labels/'
-    outdir = f'./data/visualization/da2_{encoder}_{depth_dataset}/'
+    outdir = f'.data/visualization/zoe_{encoder}_{depth_dataset}/'
     n = len(images)
     
     # Loop over testing data
@@ -278,7 +260,7 @@ def main():
             continue
 
         # Perform depth estimation
-        depth, inference_time = depth_estimator.predict_depth(frame)
+        depth, inference_time = depth_estimator.predict_depth(ds + 'images/' + file)
         results = depth_estimator.create_csv(labeldir + file[:-3] + 'txt', depth, inference_time)
 
         # Append results to CSV
@@ -298,3 +280,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+    
