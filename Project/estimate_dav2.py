@@ -245,8 +245,8 @@ class DepthEstimator:
 def main():
 
     # Load DE model
-    encoder = 'vits'
-    depth_dataset = 'hypersim'
+    encoder = 'vitl'
+    depth_dataset = 'vkitti'
     depth_estimator = DepthEstimator(
         encoder=encoder,
         dataset=depth_dataset, # 'hypersim' for indoor model, 'vkitti' for outdoor model
@@ -255,7 +255,7 @@ def main():
     )
 
     # Initialize CSV file
-    csv_file = f'estimated_depths_{encoder}_{depth_dataset}.csv'
+    csv_file = f'./data/estimated_depths_{encoder}_{depth_dataset}.csv'
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth'])
