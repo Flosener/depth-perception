@@ -217,6 +217,6 @@ class DepthAnythingV2(nn.Module):
         image = torch.from_numpy(image).unsqueeze(0)
         
         DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
-        image = image.to('cpu') # 'aten::upsample_bicubic2d.out' is not currently implemented for the MPS device
+        image = image.to(DEVICE) # 'aten::upsample_bicubic2d.out' is not currently implemented for the MPS device
         
         return image, (h, w)
