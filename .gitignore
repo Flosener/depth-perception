@@ -139,7 +139,7 @@ dmypy.json
 
 # Project specific directories and files
 Resources/
-Project/datasets/KITTI
-Project/datasets/NYUv2
-Project/datasets/HaND/raw
-Project/calibration/data/
+datasets/KITTI
+datasets/NYUv2
+calibration/data/
+data/
