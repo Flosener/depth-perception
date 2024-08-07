@@ -1,7 +1,7 @@
 import os
 import cv2
 import csv
-from depthanything import DepthAnythingEstimator
+from unidepth import UniDepthEstimator
 
 def run(depth_estimator=None, model='', model_type=''):
 
@@ -52,14 +52,12 @@ def run(depth_estimator=None, model='', model_type=''):
 
 if __name__ == "__main__":
     
-    depth_estimator = DepthAnythingEstimator(
-        encoder='vitb',
-        dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
-        max_depth=20, # 20 for indoor model, 80 for outdoor model
-        device='cuda' # change dpt.py line 220 to use 'cpu' instead of not supported 'mps'
+    depth_estimator = UniDepthEstimator(
+        model_type = 'v2-vitl14', # , v2-vits14, v2-vitl14, v2old-vitl14, v1-vitl4, v1-cnvnxtl, v1-convnext-large
+        device='cpu'
     )
 
-    model = 'depthanything'
-    model_type = 'vits_hypersim'
+    model = 'unidepth'
+    model_type = 'v2-vitl14'
 
     run(depth_estimator, model, model_type)
