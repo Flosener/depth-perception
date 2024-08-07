@@ -1,7 +1,7 @@
 import os
 import cv2
 import csv
-from depthanything import DepthAnythingEstimator
+from zoedepth import ZoeDepthEstimator
 
 def run(depth_estimator=None, model='', model_type=''):
 
@@ -52,14 +52,12 @@ def run(depth_estimator=None, model='', model_type=''):
 
 if __name__ == "__main__":
     
-    depth_estimator = DepthAnythingEstimator(
-        encoder='vitb',
-        dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
-        max_depth=20, # 20 for indoor model, 80 for outdoor model
-        device='cuda' # change dpt.py line 220 to use 'cpu' instead of not supported 'mps'
+    depth_estimator = ZoeDepthEstimator(
+        model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
+        device='cpu'
     )
 
-    model = 'depthanything'
-    model_type = 'vits_hypersim'
+    model = 'zoedepth'
+    model_type = 'ZoeD_N'
 
     run(depth_estimator, model, model_type)
