@@ -1,7 +1,12 @@
 import os
+import sys
 import cv2
 import csv
+
+from depthanything import DepthAnythingEstimator
 from zoedepth import ZoeDepthEstimator
+from metric3d import MetricDepthEstimator
+from unidepth import UniDepthEstimator
 
 def run(depth_estimator=None, model='', model_type=''):
 
@@ -52,12 +57,36 @@ def run(depth_estimator=None, model='', model_type=''):
 
 if __name__ == "__main__":
     
-    depth_estimator = ZoeDepthEstimator(
-        model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
-        device='cpu'
-    )
-
+    # Choose depth estimator and model type name (for saving)
     model = 'zoedepth'
     model_type = 'ZoeD_N'
 
+    assert model in ['zoedepth', 'metric3d', 'unidepth', 'depthanything']
+
+    if model == 'zoedepth':
+        depth_estimator = ZoeDepthEstimator(
+            model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
+            device='cpu'
+        )
+    elif model == 'metric3d':
+        depth_estimator = MetricDepthEstimator(
+        model_type = 'metric3d_vit_small', # metric3d_vit_small, metric3d_vit_large, metric3d_vit_giant2 (all require xformers --> cuda)
+        device='cpu'
+        )
+    elif model == 'unidepth':
+        depth_estimator = UniDepthEstimator(
+        model_type = 'v2-vitl14', # , v2-vits14, v2-vitl14, v2old-vitl14, v1-vitl4, v1-cnvnxtl, v1-convnext-large
+        device='cpu'
+        )
+    elif model == 'depthanything':
+        depth_estimator = DepthAnythingEstimator(
+        encoder='vits',
+        dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
+        max_depth=20, # 20 for indoor model, 80 for outdoor model
+        device='cpu' # change dpt.py line 220 to use 'cpu' instead of not supported 'mps'
+        )
+    else:
+        print('Model is not available.')
+        sys.exit()
+    
     run(depth_estimator, model, model_type)
