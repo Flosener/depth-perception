@@ -1,7 +1,7 @@
 import os
 import cv2
 import csv
-from depthanything import DepthAnythingEstimator
+from metric3d import MetricDepthEstimator
 
 def run(depth_estimator=None, model='', model_type=''):
 
@@ -52,11 +52,9 @@ def run(depth_estimator=None, model='', model_type=''):
 
 if __name__ == "__main__":
     
-    depth_estimator = DepthAnythingEstimator(
-        encoder='vitb',
-        dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
-        max_depth=20, # 20 for indoor model, 80 for outdoor model
-        device='cuda' # change dpt.py line 220 to use 'cpu' instead of not supported 'mps'
+    depth_estimator = MetricDepthEstimator(
+        model_type = 'metric3d_vit_small', # metric3d_vit_small, metric3d_vit_large, metric3d_vit_giant2 (all require xformers --> cuda)
+        device='cpu'
     )
 
     model = 'depthanything'
