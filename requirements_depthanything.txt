@@ -5,3 +5,8 @@ opencv-python
 torch==2.0.1
 torchvision==0.15.2
 open3d
+lmdb
+xformers==0.0.21 # should automatically install torch=2.0.1 if not already installed
+
+# if xformers warning:
+# pip install torch==2.0.1+cu118 torchvision==0.15.2+cu118 torchaudio==2.0.2 torchtext==0.15.2 torchdata==0.6.1 --index-url https://download.pytorch.org/whl/cu118

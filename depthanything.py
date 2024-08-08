@@ -126,9 +126,9 @@ class DepthAnythingEstimator:
             if outdir is not None and name is not None:
                 if not os.path.exists(outdir):
                     os.makedirs(outdir)
-                output_path = os.path.join(outdir, name[:-41]+'.png')
+                output_path = os.path.join(outdir, name+'.png')
                 cv2.imwrite(output_path, combined_frame)
-                print(f'Saved depth visualization to {output_path}')
+                #print(f'Saved depth visualization to {output_path}')
             return combined_frame
         
     def create_pointcloud(self, image, depth_map, name=None, outdir=None):
@@ -156,9 +156,9 @@ class DepthAnythingEstimator:
         if outdir is not None and name is not None:
             if not os.path.exists(outdir):
                 os.makedirs(outdir)
-            out_path = os.path.join(outdir, f'{name[:-41]}.ply')
+            out_path = os.path.join(outdir, name+'.ply')
             o3d.io.write_point_cloud(out_path, pcd)
-            print(f'Point cloud saved to {out_path}')
+            #print(f'Point cloud saved to {out_path}')
 
     def create_csv(self, label_file, depth_map, time):
         """
@@ -218,17 +218,18 @@ class DepthAnythingEstimator:
             count += 1
 
             # Print the mean depth and compare it with the true depth
-            print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
-            print(f"True Depth: {true_depth}")
-            print(f"Mean Depth: {mean_depth}")
-            print(f"Depth Difference: {depth_difference}\n")
+            #print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
+            #print(f"True Depth: {true_depth}")
+            #print(f"Mean Depth: {mean_depth}")
+            #print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file[:-44]))[0], classes[class_id], mean_depth, true_depth, time])
+            id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
+            results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, true_depth, time])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
 
-        # Print and return the average error
-        print(f"Average Error: {average_error}")
+        # Print the average error and return results
+        #print(f"Average Error: {average_error}")
         return results

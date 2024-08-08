@@ -36,6 +36,7 @@ Citation:
 GitHub: https://github.com/isl-org/MiDaS, https://github.com/isl-org/ZoeDepth
 """
 
+import cv2
 import numpy as np
 import os
 import torch
@@ -43,11 +44,12 @@ import open3d as o3d
 from PIL import Image
 import sys
 from pathlib import Path
+import time
 
 # Use the project file packages instead of the conda packages, i.e. add to system path for import
 file = Path(__file__).resolve()
 root = file.parents[0]
-modules = ['yolov5', 'MiDaS']
+modules = ['MiDaS']
 for m in modules:
     path = root / m
     if path.exists() and str(path) not in sys.path:
@@ -59,6 +61,7 @@ for m in modules:
         print(f"{path} already exists in sys.path")
 
 from MiDaS.run import create_side_by_side
+from MiDaS.ZoeDepth.zoedepth.utils.misc import colorize
 
 classes = {
     0: 'bottle',
@@ -91,6 +94,7 @@ class ZoeDepthEstimator:
         return torch.device("cpu")
     
     def load_model(self):
+        torch.hub.help("intel-isl/MiDaS", "DPT_BEiT_L_384", force_reload=True)
         model = torch.hub.load("isl-org/ZoeDepth", self.model_type, pretrained=True)
         model.to(self.device)
         return model
@@ -103,11 +107,30 @@ class ZoeDepthEstimator:
         self.model.eval()
         input = self.preprocess(image)
         with torch.no_grad():
+            start = time.time()
             depth = self.model.infer_pil(input)
-        return depth
+            end = time.time()
+        inference_time = end - start
+        return depth, inference_time
 
-    def create_depthmap(self, image, depth, grayscale):
-        return create_side_by_side(image, depth, grayscale) / 255
+    def create_depthmap(self, image, depth, grayscale, name, outdir):
+        img = self.preprocess(image)
+        orig_size = img.size
+        pred = Image.fromarray(colorize(depth))
+        # Stack img and pred side by side for comparison and save
+        pred = pred.resize(orig_size)
+        combined_frame = Image.new("RGB", (orig_size[0]*2, orig_size[1]))
+        combined_frame.paste(img, (0, 0))
+        combined_frame.paste(pred, (orig_size[0], 0))
+
+        # Save to output directory if specified
+        if outdir is not None and name is not None:
+            if not os.path.exists(outdir):
+                os.makedirs(outdir)
+            output_path = os.path.join(outdir, name+'.png')
+            combined_frame.save(output_path)
+            print(f'Saved depth visualization to {output_path}')
+        return create_side_by_side(cv2.imread(image), depth, grayscale) / 255
         
     def create_pointcloud(self, image, depth_map, name=None, outdir=None):
         """
@@ -134,7 +157,7 @@ class ZoeDepthEstimator:
         if outdir is not None and name is not None:
             if not os.path.exists(outdir):
                 os.makedirs(outdir)
-            out_path = os.path.join(outdir, f'{name[:-41]}.ply')
+            out_path = os.path.join(outdir, name+'.ply')
             o3d.io.write_point_cloud(out_path, pcd)
             print(f'Point cloud saved to {out_path}')
 
@@ -196,17 +219,18 @@ class ZoeDepthEstimator:
             count += 1
 
             # Print the mean depth and compare it with the true depth
-            print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
-            print(f"True Depth: {true_depth}")
-            print(f"Mean Depth: {mean_depth}")
-            print(f"Depth Difference: {depth_difference}\n")
+            #print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
+            #print(f"True Depth: {true_depth}")
+            #print(f"Mean Depth: {mean_depth}")
+            #print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file[:-44]))[0], classes[class_id], mean_depth, true_depth, time])
+            id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
+            results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, true_depth, time])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
 
         # Print and return the average error
-        print(f"Average Error: {average_error}")
+        #print(f"Average Error: {average_error}")
         return results

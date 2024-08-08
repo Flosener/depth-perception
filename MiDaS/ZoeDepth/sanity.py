@@ -77,7 +77,8 @@ print("X.shape", X.shape)
 print("predicting")
 
 with torch.no_grad():
-    out = model.infer(X).cpu()
+    #out = model.infer(X).cpu()
+    out = model.infer_pil(img)
 
 # or just, 
 # out = model.infer_pil(img)
@@ -86,13 +87,12 @@ with torch.no_grad():
 print("output.shape", out.shape)
 pred = Image.fromarray(colorize(out))
 # Stack img and pred side by side for comparison and save
-pred = pred.resize(orig_size, Image.ANTIALIAS)
+pred = pred.resize(orig_size)#, Image.ANTIALIAS)
 stacked = Image.new("RGB", (orig_size[0]*2, orig_size[1]))
 stacked.paste(img, (0, 0))
 stacked.paste(pred, (orig_size[0], 0))
 
 stacked.save("pred.png")
 print("saved pred.png")
-
 
 model.infer_pil(img, output_type="pil").save("pred_raw.png")

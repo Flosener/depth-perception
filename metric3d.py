@@ -36,12 +36,14 @@ GitHub: https://github.com/yvanyin/metric3d
 """
 
 import cv2
+import matplotlib
 import numpy as np
 import os
 import torch
 import open3d as o3d
 import sys
 from pathlib import Path
+import time
 
 # Use the project file packages instead of the conda packages, i.e. add to system path for import
 file = Path(__file__).resolve()
@@ -97,13 +99,53 @@ class MetricDepthEstimator:
         return image
     
     def predict_depth(self, image):
+        print(f'image shape: {image.shape}')
         self.model.eval()
+        print(f'Device: {self.device}')
         input = self.preprocess(image)
+        input = input.to(self.device)
+        print(f'preprocessed image (input) shape: {input.shape}')
         with torch.no_grad():
+            start = time.time()
             depth, confidence, output_dict = self.model.inference({'input': input})
-        return depth
+            end = time.time()
+        inference_time = end - start
 
-    def create_depthmap(self, image, depth, grayscale):
+        # post-process depth
+        print(f'output (depth) shape: {depth.shape}')
+        depth = depth.squeeze().cpu().numpy()
+        print(depth.shape)
+        height, width = image.shape[:2]
+        depth = cv2.resize(depth, (width, height))
+        print(depth.shape)
+        return depth, inference_time
+    
+    def create_depthmap(self, image, depth, grayscale, name=None, outdir=None):
+        # Normalize depth map
+        depth_normalized = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
+        depth_normalized = depth_normalized.astype(np.uint8)
+
+        if grayscale:
+            depth_colored = np.repeat(depth_normalized[..., np.newaxis], 3, axis=-1)
+        else:
+            cmap = matplotlib.colormaps.get_cmap('Spectral_r')
+            depth_colored = (cmap(depth_normalized)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
+
+        if depth_colored is None:
+            return image
+        else:
+            split_region = np.ones((image.shape[0], 20, 3), dtype=np.uint8) * 255
+            combined_frame = cv2.hconcat([image, split_region, depth_colored])
+            # Save to output directory if specified
+            if outdir is not None and name is not None:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                output_path = os.path.join(outdir, name+'.png')
+                cv2.imwrite(output_path, combined_frame)
+                #print(f'Saved depth visualization to {output_path}')
+            return combined_frame
+
+    def _create_depthmap(self, image, depth, grayscale, name, outdir):
         """ From Midas.run """
         depth_min = depth.min()
         depth_max = depth.max()
@@ -117,7 +159,15 @@ class MetricDepthEstimator:
         if image is None:
             return right_side
         else:
-            return np.concatenate((image, right_side), axis=1)
+            combined_frame = np.concatenate((image, right_side), axis=1)
+            # Save to output directory if specified
+            if outdir is not None and name is not None:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                output_path = os.path.join(outdir, name+'.png')
+                cv2.imwrite(output_path, combined_frame)
+                print(f'Saved depth visualization to {output_path}')
+            return combined_frame
         
     def create_pointcloud(self, image, depth_map, name=None, outdir=None):
         """
@@ -144,7 +194,7 @@ class MetricDepthEstimator:
         if outdir is not None and name is not None:
             if not os.path.exists(outdir):
                 os.makedirs(outdir)
-            out_path = os.path.join(outdir, f'{name[:-41]}.ply')
+            out_path = os.path.join(outdir, name+'.ply')
             o3d.io.write_point_cloud(out_path, pcd)
             print(f'Point cloud saved to {out_path}')
 
@@ -206,17 +256,18 @@ class MetricDepthEstimator:
             count += 1
 
             # Print the mean depth and compare it with the true depth
-            print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
-            print(f"True Depth: {true_depth}")
-            print(f"Mean Depth: {mean_depth}")
-            print(f"Depth Difference: {depth_difference}\n")
+            #print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
+            #print(f"True Depth: {true_depth}")
+            #print(f"Mean Depth: {mean_depth}")
+            #print(f"Depth Difference: {depth_difference}\n")
 
             # Store result for CSV output
-            results.append([os.path.splitext(os.path.basename(label_file[:-44]))[0], classes[class_id], mean_depth, true_depth, time])
+            id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
+            results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, true_depth, time])
 
         # Calculate the average error
         average_error = total_error / count if count != 0 else 0
 
         # Print and return the average error
-        print(f"Average Error: {average_error}")
+        #print(f"Average Error: {average_error}")
         return results
