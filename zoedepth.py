@@ -132,7 +132,7 @@ class ZoeDepthEstimator:
             print(f'Saved depth visualization to {output_path}')
         return create_side_by_side(cv2.imread(image), depth, grayscale) / 255
         
-    def create_pointcloud(self, image, depth_map, name=None, outdir=None):
+    def create_pointcloud(self, image, depth, name=None, outdir=None):
         """
         Code by @ Subhransu Sekhar Bhattacharjee (Rudra) "1ssb"
         """
@@ -143,7 +143,7 @@ class ZoeDepthEstimator:
         x, y = np.meshgrid(np.arange(width), np.arange(height))
         x = (x - width / 2) / focal_length_x
         y = (y - height / 2) / focal_length_y
-        z = np.array(depth_map)
+        z = np.array(depth)
 
         points = np.stack((np.multiply(x, z), np.multiply(y, z), z), axis=-1).reshape(-1, 3)
         colors = image.reshape(-1, 3) / 255.0
@@ -161,18 +161,18 @@ class ZoeDepthEstimator:
             o3d.io.write_point_cloud(out_path, pcd)
             print(f'Point cloud saved to {out_path}')
 
-    def create_csv(self, label_file, depth_map, time):
+    def create_csv(self, label_file, depth, time):
         """
         Extract depth from a target ROI (e.g. bounding box).
 
         Parameters:
         label_file (str): Path to the YOLO format label file
-        depth_map (np.array): The depth map of the image
+        depth (np.array): The depth map of the image
 
         Returns:
         float: The average error between the predicted mean depth and the true depth across all bounding boxes
         """
-        height, width = depth_map.shape[:2] # if depth_map.shape == frame.shape[:2]
+        height, width = depth.shape[:2] # if depth.shape == frame.shape[:2]
         total_error = 0
         count = 0
 
@@ -202,11 +202,11 @@ class ZoeDepthEstimator:
             # Ensure the bounding box coordinates are within the image dimensions
             x_start = max(x, 0)
             y_start = max(y, 0)
-            x_end = min(x + w, depth_map.shape[1])
-            y_end = min(y + h, depth_map.shape[0])
+            x_end = min(x + w, depth.shape[1])
+            y_end = min(y + h, depth.shape[0])
 
             # Extract the ROI from the depth map
-            roi_depth = depth_map[y_start:y_end, x_start:x_end]
+            roi_depth = depth[y_start:y_end, x_start:x_end]
 
             # Calculate the mean depth within the ROI (method should probably be changed later)
             mean_depth = np.mean(roi_depth)

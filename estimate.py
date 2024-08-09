@@ -48,18 +48,17 @@ def run(depth_estimator=None, model='', model_type=''):
         depth_estimator.create_pointcloud(frame, depth, name, outdir+'pointclouds/')
         depth_image = depth_estimator.create_depthmap(input, depth, False, name, outdir+'depthmaps/')
         depth_image = cv2.resize(depth_image, (960, 300)) # W, H
-        #"""
         cv2.imshow("Depth map", depth_image)
+
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
-        #"""
 
 
 if __name__ == "__main__":
     
     # Choose depth estimator and model type name (for saving)
-    model = 'unidepth'
-    model_type = 'v2-vits14'
+    model = 'metric3d'
+    model_type = 'metric3d_vit_giant2'
 
     assert model in ['depthanything', 'zoedepth', 'metric3d', 'unidepth']
     
@@ -80,7 +79,7 @@ if __name__ == "__main__":
     elif model == 'metric3d':
         from metric3d import MetricDepthEstimator
         depth_estimator = MetricDepthEstimator(
-            model_type = 'metric3d_vit_small', # metric3d_vit_small, metric3d_vit_large, metric3d_vit_giant2 (all require cuda)
+            model_type = 'metric3d_vit_giant2', # metric3d_vit_small, metric3d_vit_large, metric3d_vit_giant2 --> all require cuda
             device='cuda'
         )
     elif model == 'unidepth':
