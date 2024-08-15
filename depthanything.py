@@ -45,7 +45,8 @@ for m in modules:
     elif not path.exists():
         print(f"Error: {path} does not exist.")
 
-from depthanythingv2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2
+from depthanythingv2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2 as metricV2
+from depthanythingv2.depth_anything_v2.dpt import DepthAnythingV2 as relativeV2
 
 classes = {
     0: 'bottle',
@@ -64,31 +65,28 @@ classes = {
 
 
 class DepthAnythingEstimator:
-    def __init__(self, encoder='vitb', dataset='hypersim', max_depth=20, device=None):
-        self.device = self.get_device(device)
-        self.encoder = encoder if encoder in ['vits', 'vitb', 'vitl', 'vitg'] else 'vitb'
+    def __init__(self, model_type='vits', dataset='hypersim', max_depth=None, device=None):
+        self.device = device if device is not None else torch.device('cuda') if torch.cuda.is_available() else torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
+        print(f'Device: {self.device}')
+        self.encoder = model_type if model_type in ['vits', 'vitb', 'vitl', 'vitg'] else 'vits'
         self.configs = {
-        'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
-        'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
-        'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
-        'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
+            'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
+            'vitb': {'encoder': 'vitb', 'features': 128, 'out_channels': [96, 192, 384, 768]},
+            'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
+            'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
         }
         self.dataset = dataset
         self.max_depth = max_depth # 20 for indoor model, 80 for outdoor model
         self.model = self.load_model()
     
-    def get_device(self, device):
-        if device in ['cpu', 'cuda', 'mps']:
-            if device == 'cuda' and torch.cuda.is_available():
-                return torch.device("cuda")
-            if device == 'mps' and torch.backends.mps.is_available():
-                return torch.device("mps")
-        return torch.device("cpu")
-    
     def load_model(self):
-        model = DepthAnythingV2(**{**self.configs[self.encoder], 'max_depth': self.max_depth})
-        model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_v2_metric_{self.dataset}_{self.encoder}.pth', map_location=self.device))
-        model.to(self.device)
+        if self.max_depth is not None:
+            model = metricV2(**{**self.configs[self.encoder], 'max_depth': self.max_depth})
+            model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_v2_metric_{self.dataset}_{self.encoder}.pth', map_location=self.device))
+        else:
+            model = relativeV2(**self.configs[self.encoder])
+            model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_{self.encoder}14.pth', map_location=self.device))
+        model.to(self.device) # already done by map_location, but well
         return model
     
     def preprocess(self, image):
@@ -97,7 +95,6 @@ class DepthAnythingEstimator:
     
     def predict_depth(self, image):
         self.model.eval()
-        print(f'Device: {self.device}')
         input = self.preprocess(image)
         with torch.no_grad():
             start = time.time()

@@ -215,7 +215,8 @@ class DepthAnythingV2(nn.Module):
         image = transform({'image': image})['image']
         image = torch.from_numpy(image).unsqueeze(0)
         
-        DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+        #DEVICE = 'cuda' if torch.cuda.is_available() else 'mps' if torch.backends.mps.is_available() else 'cpu'
+        DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu' # mps currently not supported
         image = image.to(DEVICE)
         
         return image, (h, w)
