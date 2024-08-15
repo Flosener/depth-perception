@@ -8,7 +8,7 @@ import numpy as np
 def evaluate(depth_estimator=None, model='', model_type=''):
 
     # Setup data I/O
-    outdir = f'./data/{model}/{model_type}/'
+    outdir = f'./data/{model}/{model_type}_{depth_estimator.dataset}/' if model=='depthanything' else f'./data/{model}/{model_type}/'
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
@@ -56,7 +56,7 @@ def evaluate(depth_estimator=None, model='', model_type=''):
             break
 
 
-def run(depth_estimator=None, model='', model_type='', source=0):
+def run(depth_estimator=None, source=0):
 
     # Data I/O
     cap = cv2.VideoCapture(source)
@@ -89,59 +89,67 @@ if __name__ == "__main__":
     
     metric = False
     eval = False
-    source = 1
+    source = 0
 
-    # Choose depth estimator and model type name (for saving)
-    model = 'depthanything'
-    model_type = 'vits'
+    # Choose depth estimator and model size
+    model = 'midas'
+    model_type = 'dpt_beit_large_384'
 
-    assert model in ['depthanything', 'zoedepth', 'metric3d', 'unidepth']
+    assert model in ['depthanything', 'midas', 'metric3d', 'unidepth'], f"Model '{model}' is not available."
     
     if model == 'depthanything':
+        assert model_type in ['vits', 'vitb', 'vitl', 'vitg'], f"Model type '{model_type}' is not available. Available: vits, vitb, vitl, vitg"
+        max_depth = 20 if metric else None
+
+        # CPU: vits ~1.25s, vitb ~2.8s, vitl ~8.3s (both, metric and relative)
         from depthanything import DepthAnythingEstimator
-        if metric: # CPU: vits ~1.25s, vitb ~2.8s, vitl ~8.3s
-            depth_estimator = DepthAnythingEstimator(
-                model_type='vits', # vits, vitb, vitl
-                dataset='hypersim', # 'hypersim' for indoor model, 'vkitti' for outdoor model
-                max_depth=20, # 20 for indoor model, 80 for outdoor model
-                device=torch.device('cpu')
-            )
-        else: # CPU: same as above
-            depth_estimator = DepthAnythingEstimator(
-                model_type='vits', # vits, vitb, vitl
-                device=torch.device('cpu'),
-            )
-    elif model == 'zoedepth':
-        if metric: # ~7.3s on CPU (N), 
-            from zoedepth_metric import ZoeDepthEstimator
-            depth_estimator = ZoeDepthEstimator(
-                model_type = 'ZoeD_N', # ZoeN (nyu, indoor), ZoeK (kitti, outdoor), ZoeNK
-            )
-        else:
-            pass
-    elif model == 'metric3d':
+        depth_estimator = DepthAnythingEstimator(
+            model_type=model_type,
+            max_depth=max_depth, # 20 for indoor model (-> hypersim), 80 for outdoor model (-> vkitti), None for relative depth
+        )
+
+    elif model == 'midas':
         if metric:
-            # REQUIRES CUDA
-            from metric3d_metric import MetricDepthEstimator
-            depth_estimator = MetricDepthEstimator(
-                model_type = 'metric3d_vit_small', # metric3d_vit_small, (metric3d_vit_large, metric3d_vit_giant2 --> too slow)
-            )
+            assert model_type in ['ZoeD_N', 'ZoeD_K', 'ZoeD_NK'], f"Model type '{model_type}' is not available. Available: ZoeD_N, ZoeD_K, ZoeD_NK"
         else:
-            pass
-    elif model == 'unidepth':
-        if metric:
-            # REQUIRES CUDA
-            from unidepth_metric import UniDepthEstimator
-            depth_estimator = UniDepthEstimator(
-                model_type = 'v2-vits14', # , v2-vits14, v2-vitl14, v2old-vitl14, v1-vitl4, v1-cnvnxtl, v1-convnext-large
-            )
-        else:
-            pass
-    else:
-        print('Model is not available.')
-        sys.exit()
+            # Downgrade to timm == 0.6.12, e.g. for swin and levit (https://github.com/isl-org/MiDaS/issues/225#issuecomment-2211808309)
+            valid_models = ['dpt_beit_large_512', 'dpt_beit_large_384', 'dpt_beit_base_384', 'dpt_swin2_large_384', 'dpt_swin2_base_384',
+                            'dpt_swin2_tiny_256', 'dpt_swin_large_384', 'dpt_levit_224', 'dpt_large_384',
+                            'dpt_hybrid_384', 'midas_v21_384', 'midas_v21_small_256']
+            available_models = ", ".join(valid_models)
+            assert model_type in valid_models, f"Model type '{model_type}' is not available. Available: {valid_models}"
+        
+        # CPU: metric ~7.4s, 
+        # relative -- dpt_levit_224 ~0.06s, dpt_swin2_tiny_256 ~0.26s ***, midas_v21_small_256 ~0.38s, midas_v21_384 ~0.39s, 
+        # dpt_beit_base_384 ~1.45s, dpt_swin2_large_384 ~ 1.9s, dpt_swin_large_384 ~1.2s, dpt_swin2_base_384 ~1.22s, dpt_hybrid_384 ~2s, 
+        # dpt_large_384 ~3.1s, dpt_beit_large_384 ~3.5s, dpt_beit_large_512 ~8.8s
+        from midas_zoe import MidasDepthEstimator
+        depth_estimator = MidasDepthEstimator(
+            model_type=model_type,
+        )
     
+    elif model == 'metric3d':
+        print('Metric3D supports only metric depth estimation (CUDA required). Switching to metric estimation.') if not metric else None
+        assert model_type in ['vits', 'vitl', 'vitg'], f"Model type '{model_type}' is not available. Available: vits, vitl, vitg"
+        types = {'vits': 'metric3d_vit_small', 'vitl': 'metric3d_vit_large', 'vitg': 'metric3d_vit_giant2'}
+
+        from metric3d import MetricDepthEstimator
+        depth_estimator = MetricDepthEstimator(
+            model_type=types[model_type],
+        )
+
+    elif model == 'unidepth':
+        print('UniDepth supports only metric depth estimation (CUDA required). Switching to metric estimation.') if not metric else None
+        assert model_type in ['vits', 'vitl', 'cnvnxtl'], f"Model type '{model_type}' is not available. Available: vits, vitl, cnvnxtl"
+        types = {'vits': 'v2-vits14', 'vitl': 'v2-vits14', 'cnvnxtl': 'v1-cnvnxtl'}
+
+        from unidepth import UniDepthEstimator
+        depth_estimator = UniDepthEstimator(
+            model_type=types[model_type],
+        )
+    
+    # Run evaluation on test dataset or run camera stream estimation
     if eval:
         evaluate(depth_estimator, model, model_type)
     else:
-        run(depth_estimator, model, model_type, source)
+        run(depth_estimator, source)

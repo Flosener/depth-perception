@@ -1,42 +1,19 @@
 """
-MIT License
-
-Copyright (c) 2022 Intelligent Systems Lab Org
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+This software is released under Creatives Common BY-NC 4.0 license.
 
 Citation:
-@misc{https://doi.org/10.48550/arxiv.2302.12288,
-  doi = {10.48550/ARXIV.2302.12288},
-  url = {https://arxiv.org/abs/2302.12288},
-  author = {Bhat, Shariq Farooq and Birkl, Reiner and Wofk, Diana and Wonka, Peter and Müller, Matthias},
-  keywords = {Computer Vision and Pattern Recognition (cs.CV), FOS: Computer and information sciences, FOS: Computer and information sciences},
-  title = {ZoeDepth: Zero-shot Transfer by Combining Relative and Metric Depth},
-  publisher = {arXiv},
-  year = {2023},
-  copyright = {arXiv.org perpetual, non-exclusive license}
+@inproceedings{piccinelli2024unidepth,
+    title     = {{U}ni{D}epth: Universal Monocular Metric Depth Estimation},
+    author    = {Piccinelli, Luigi and Yang, Yung-Hsu and Sakaridis, Christos and Segu, Mattia and Li, Siyuan and Van Gool, Luc and Yu, Fisher},
+    booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)},
+    year      = {2024}
 }
 
-GitHub: https://github.com/isl-org/MiDaS, https://github.com/isl-org/ZoeDepth
+GitHub: https://github.com/lpiccinelli-eth/UniDepth
 """
 
 import cv2
+import matplotlib
 import numpy as np
 import os
 import torch
@@ -49,7 +26,7 @@ import time
 # Use the project file packages instead of the conda packages, i.e. add to system path for import
 file = Path(__file__).resolve()
 root = file.parents[0]
-modules = ['MiDaS']
+modules = ['unidepth']
 for m in modules:
     path = root / m
     if path.exists() and str(path) not in sys.path:
@@ -60,8 +37,8 @@ for m in modules:
     elif str(path) in sys.path:
         print(f"{path} already exists in sys.path")
 
-from MiDaS.run import create_side_by_side
-from MiDaS.ZoeDepth.zoedepth.utils.misc import colorize
+from UniDepth.unidepth.models.unidepthv1 import UniDepthV1
+from UniDepth.unidepth.models.unidepthv2 import UniDepthV2
 
 classes = {
     0: 'bottle',
@@ -78,29 +55,29 @@ classes = {
     11: 'glass_far'
 }
 
-
-class ZoeDepthEstimator:
+class UniDepthEstimator:
     def __init__(self, model_type, device=None):
-        self.device = self.get_device(device)
+        self.device = device if device is not None else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') # torch.device('mps') if torch.backends.mps.is_available()
+        print(f'Device: {self.device}')
         self.model_type = model_type
         self.model = self.load_model()
     
-    def get_device(self, device):
-        if device in ['cpu', 'cuda', 'mps']:
-            if device == 'cuda' and torch.cuda.is_available():
-                return torch.device("cuda")
-            if device == 'mps' and torch.backends.mps.is_available():
-                return torch.device("mps")
-        return torch.device("cpu")
-    
     def load_model(self):
-        torch.hub.help("intel-isl/MiDaS", "DPT_BEiT_L_384", force_reload=True)
-        model = torch.hub.load("isl-org/ZoeDepth", self.model_type, pretrained=True)
+        if 'v1' in self.model_type:
+            model = UniDepthV1.from_pretrained(f"lpiccinelli/unidepth-{self.model_type}")
+        elif 'v2' in self.model_type:
+            model = UniDepthV2.from_pretrained(f"lpiccinelli/unidepth-{self.model_type}")
+            # Also available from TorchHub
+            #model = torch.hub.load("lpiccinelli-eth/UniDepth", "UniDepth", version='v2', backbone='vitl14', pretrained=True, trust_repo=True, force_reload=True)
+            # Local from unidepth/hubconf.py:33 (local state dict path)
+        else:
+            print('Model not found.')
+            return None
         model.to(self.device)
         return model
     
     def preprocess(self, image):
-        image = Image.open(image).convert("RGB")
+        image = torch.from_numpy(image).permute(2, 0, 1) # C, H, W
         return image
     
     def predict_depth(self, image):
@@ -108,29 +85,60 @@ class ZoeDepthEstimator:
         input = self.preprocess(image)
         with torch.no_grad():
             start = time.time()
-            depth = self.model.infer_pil(input)
+            depth = self.model.infer(input)['depth'] # 'points': point cloud, 'intrinsics': camera intrinsics pred
             end = time.time()
         inference_time = end - start
+        depth = depth.squeeze().cpu().numpy()
         return depth, inference_time
+    
+    def create_depthmap(self, image, depth, grayscale, name=None, outdir=None):
+        # Normalize depth map
+        depth_normalized = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
+        depth_normalized = depth_normalized.astype(np.uint8)
 
-    def create_depthmap(self, image, depth, grayscale, name, outdir):
-        img = self.preprocess(image)
-        orig_size = img.size
-        pred = Image.fromarray(colorize(depth))
-        # Stack img and pred side by side for comparison and save
-        pred = pred.resize(orig_size)
-        combined_frame = Image.new("RGB", (orig_size[0]*2, orig_size[1]))
-        combined_frame.paste(img, (0, 0))
-        combined_frame.paste(pred, (orig_size[0], 0))
+        if grayscale:
+            depth_colored = np.repeat(depth_normalized[..., np.newaxis], 3, axis=-1)
+        else:
+            cmap = matplotlib.colormaps.get_cmap('Spectral_r')
+            depth_colored = (cmap(depth_normalized)[:, :, :3] * 255)[:, :, ::-1].astype(np.uint8)
 
-        # Save to output directory if specified
-        if outdir is not None and name is not None:
-            if not os.path.exists(outdir):
-                os.makedirs(outdir)
-            output_path = os.path.join(outdir, name+'.png')
-            combined_frame.save(output_path)
-            print(f'Saved depth visualization to {output_path}')
-        return create_side_by_side(cv2.imread(image), depth, grayscale) / 255
+        if depth_colored is None:
+            return image
+        else:
+            split_region = np.ones((image.shape[0], 20, 3), dtype=np.uint8) * 255
+            combined_frame = cv2.hconcat([image, split_region, depth_colored])
+            # Save to output directory if specified
+            if outdir is not None and name is not None:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                output_path = os.path.join(outdir, name+'.png')
+                cv2.imwrite(output_path, combined_frame)
+                #print(f'Saved depth visualization to {output_path}')
+            return combined_frame
+
+    def _create_depthmap(self, image, depth, grayscale, name, outdir):
+        """ From Midas.run """
+        depth_min = depth.min()
+        depth_max = depth.max()
+        normalized_depth = 255 * (depth - depth_min) / (depth_max - depth_min)
+        normalized_depth *= 3
+
+        right_side = np.repeat(np.expand_dims(normalized_depth, 2), 3, axis=2) / 3
+        if not grayscale:
+            right_side = cv2.applyColorMap(np.uint8(right_side), cv2.COLORMAP_INFERNO)
+
+        if image is None:
+            return right_side
+        else:
+            combined_frame = np.concatenate((image, right_side), axis=1)
+            # Save to output directory if specified
+            if outdir is not None and name is not None:
+                if not os.path.exists(outdir):
+                    os.makedirs(outdir)
+                output_path = os.path.join(outdir, name+'.png')
+                cv2.imwrite(output_path, combined_frame)
+                print(f'Saved depth visualization to {output_path}')
+            return combined_frame
         
     def create_pointcloud(self, image, depth, name=None, outdir=None):
         """

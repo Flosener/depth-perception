@@ -45,8 +45,8 @@ for m in modules:
     elif not path.exists():
         print(f"Error: {path} does not exist.")
 
-from depthanythingv2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2 as metricV2
-from depthanythingv2.depth_anything_v2.dpt import DepthAnythingV2 as relativeV2
+from DepthAnythingV2.metric_depth.depth_anything_v2.dpt import DepthAnythingV2 as MetricV2
+from DepthAnythingV2.depth_anything_v2.dpt import DepthAnythingV2 as RelativeV2
 
 classes = {
     0: 'bottle',
@@ -65,8 +65,8 @@ classes = {
 
 
 class DepthAnythingEstimator:
-    def __init__(self, model_type='vits', dataset='hypersim', max_depth=None, device=None):
-        self.device = device if device is not None else torch.device('cuda') if torch.cuda.is_available() else torch.device('mps') if torch.backends.mps.is_available() else torch.device('cpu')
+    def __init__(self, model_type='vits', max_depth=None, device=None):
+        self.device = device if device is not None else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') # torch.device('mps') if torch.backends.mps.is_available()
         print(f'Device: {self.device}')
         self.encoder = model_type if model_type in ['vits', 'vitb', 'vitl', 'vitg'] else 'vits'
         self.configs = {
@@ -75,16 +75,16 @@ class DepthAnythingEstimator:
             'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
             'vitg': {'encoder': 'vitg', 'features': 384, 'out_channels': [1536, 1536, 1536, 1536]}
         }
-        self.dataset = dataset
+        self.dataset = 'hypersim' if max_depth==20 else 'vkitti' if max_depth==80 else '' # 'hypersim' for indoor model, 'vkitti' for outdoor model
         self.max_depth = max_depth # 20 for indoor model, 80 for outdoor model
         self.model = self.load_model()
     
     def load_model(self):
         if self.max_depth is not None:
-            model = metricV2(**{**self.configs[self.encoder], 'max_depth': self.max_depth})
+            model = MetricV2(**{**self.configs[self.encoder], 'max_depth': self.max_depth})
             model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_v2_metric_{self.dataset}_{self.encoder}.pth', map_location=self.device))
         else:
-            model = relativeV2(**self.configs[self.encoder])
+            model = RelativeV2(**self.configs[self.encoder])
             model.load_state_dict(torch.load(f'depthanythingv2/checkpoints/depth_anything_{self.encoder}14.pth', map_location=self.device))
         model.to(self.device) # already done by map_location, but well
         return model

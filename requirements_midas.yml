@@ -21,7 +21,7 @@ dependencies:
   - torchvision=0.14.1
   - pip:
     - huggingface-hub==0.11.1
-    - timm==0.6.12
+    - timm==0.6.12 # upgrade for various models
     - tqdm==4.64.1
     - wandb==0.13.9
     - open3d

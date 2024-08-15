@@ -25,9 +25,9 @@
 import json
 import os
 
-from MiDaS.ZoeDepth.zoedepth.utils.easydict import EasyDict as edict
+from midas.ZoeDepth.zoedepth.utils.easydict import EasyDict as edict
 
-from MiDaS.ZoeDepth.zoedepth.utils.arg_utils import infer_type
+from midas.ZoeDepth.zoedepth.utils.arg_utils import infer_type
 import pathlib
 import platform
 

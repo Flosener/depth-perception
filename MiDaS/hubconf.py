@@ -304,7 +304,7 @@ def transforms():
     import cv2
     from torchvision.transforms import Compose
     from midas.transforms import Resize, NormalizeImage, PrepareForNet
-    from midas import transforms
+    from midas_zoe import transforms
 
     transforms.default_transform = Compose(
         [

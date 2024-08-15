@@ -76,17 +76,10 @@ classes = {
 
 class MetricDepthEstimator:
     def __init__(self, model_type, device=None):
-        self.device = self.get_device(device)
+        self.device = device if device is not None else torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu') # torch.device('mps') if torch.backends.mps.is_available()
+        print(f'Device: {self.device}')
         self.model_type = model_type
         self.model = self.load_model()
-    
-    def get_device(self, device):
-        if device in ['cpu', 'cuda', 'mps']:
-            if device == 'cuda' and torch.cuda.is_available():
-                return torch.device("cuda")
-            if device == 'mps' and torch.backends.mps.is_available():
-                return torch.device("mps")
-        return torch.device("cpu")
     
     def load_model(self):
         model = torch.hub.load('yvanyin/metric3d', self.model_type, pretrain=True)
@@ -99,12 +92,9 @@ class MetricDepthEstimator:
         return image
     
     def predict_depth(self, image):
-        print(f'image shape: {image.shape}')
         self.model.eval()
-        print(f'Device: {self.device}')
         input = self.preprocess(image)
         input = input.to(self.device)
-        print(f'preprocessed image (input) shape: {input.shape}')
         with torch.no_grad():
             start = time.time()
             depth, confidence, output_dict = self.model.inference({'input': input})
@@ -112,7 +102,6 @@ class MetricDepthEstimator:
         inference_time = end - start
 
         # post-process depth
-        print(f'output (depth) shape: {depth.shape}')
         depth = depth.squeeze().cpu().numpy()
         print(depth.shape)
         #height, width = image.shape[:2]
