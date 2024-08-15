@@ -144,3 +144,5 @@ datasets/KITTI/
 datasets/NYUv2/
 calibration/data/
 data/
+DepthAnythingV2/checkpoints/
+midas/weights
