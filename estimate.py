@@ -5,10 +5,10 @@ import csv
 import torch
 import numpy as np
 
-def evaluate(depth_estimator=None, model='', model_type=''):
+def evaluate(depth_estimator=None, model='', model_type='', metric=False):
 
     # Setup data I/O
-    outdir = f'./data/{model}/{model_type}_{depth_estimator.dataset}/' if model=='depthanything' else f'./data/{model}/{model_type}/'
+    outdir = f'./data/{model}/{model_type}_{depth_estimator.dataset}/' if model=='depthanything' and metric else f'./data/{model}/{model_type}/'
     if not os.path.exists(outdir):
         os.makedirs(outdir)
 
@@ -20,7 +20,10 @@ def evaluate(depth_estimator=None, model='', model_type=''):
     csv_file = outdir + 'estimated_depth.csv'
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
-        writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth', 'inference_time'])
+        if metric:
+            writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth', 'inference_time'])
+        else:
+            writer.writerow(['filename', 'mean_error', 'inference_time'])
 
     
     # Loop over dataset
@@ -37,7 +40,7 @@ def evaluate(depth_estimator=None, model='', model_type=''):
         # Perform depth estimation
         depth, inference_time = depth_estimator.predict_depth(frame)
         labelfile = labels + file[:-3] + 'txt'
-        results = depth_estimator.create_csv(labelfile, depth, inference_time)
+        results = depth_estimator.create_csv(labelfile, depth, frame, inference_time, metric)
 
         # Append results to CSV
         with open(csv_file, mode='a', newline='') as f:
@@ -47,10 +50,10 @@ def evaluate(depth_estimator=None, model='', model_type=''):
         # Visualize results
         id = '_' + file[-36:-33] # take 3 letters as ID hash for each image
         name = file[:-44]+id
-        depth_estimator.create_pointcloud(frame, depth, name, outdir+'pointclouds/')
-        depth_image = depth_estimator.create_depthmap(frame, depth, False, name, outdir+'depthmaps/')
-        depth_image = cv2.resize(depth_image, (960, 300)) # W, H
-        cv2.imshow("Depth map", depth_image)
+        #depth_estimator.create_pointcloud(frame, depth, name, outdir+'pointclouds/')
+        #depth_image = depth_estimator.create_depthmap(frame, depth, False, name, outdir+'depthmaps/')
+        #depth_image = cv2.resize(depth_image, (960, 300)) # W, H
+        #cv2.imshow("Depth map", depth_image)
 
         if cv2.waitKey(100) & 0xFF == ord('q'):
             break
@@ -88,12 +91,12 @@ def run(depth_estimator=None, source=0):
 if __name__ == "__main__":
     
     metric = False
-    eval = False
+    eval = True
     source = 0
 
     # Choose depth estimator and model size
-    model = 'midas'
-    model_type = 'dpt_beit_large_384'
+    model = 'depthanything' # 'midas'
+    model_type = 'vitl' # 'dpt_swin2_tiny_256'
 
     assert model in ['depthanything', 'midas', 'metric3d', 'unidepth'], f"Model '{model}' is not available."
     
@@ -150,6 +153,6 @@ if __name__ == "__main__":
     
     # Run evaluation on test dataset or run camera stream estimation
     if eval:
-        evaluate(depth_estimator, model, model_type)
+        evaluate(depth_estimator, model, model_type, metric)
     else:
         run(depth_estimator, source)
