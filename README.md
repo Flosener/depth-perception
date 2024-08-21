@@ -9,6 +9,7 @@ I am here sharing the code for evaluation of four depth estimators, namely Depth
 
 - Create separate environments from the respective requirements files for each estimator as they all rely on different packages and versions
 - If you want to use DepthAnythingV2 you have to download the weights first from https://github.com/DepthAnything/Depth-Anything-V2/tree/main/metric_depth (metric) and https://huggingface.co/spaces/LiheYoung/Depth-Anything/tree/main/checkpoints (relative) into depthanythingv2/checkpoints
+- Same for relative depth estimation with MiDaS: https://github.com/isl-org/MiDaS?tab=readme-ov-file#setup (into MiDaS/weights)
 - Specifiy the model name 'model' and weights 'model_type' of the depth estimator in the 'estimate.py' file's main idiom
 - run estimate.py (no CLI command available as args parser is not implemented yet) -> this will import the respective class and call eval() to predict depth of each dataset image and save depthmap, pointcloud and predicted depths in a csv file OR call run() on datastream from a camera 'source'
 

@@ -18,10 +18,11 @@ def evaluate(depth_estimator=None, model='', model_type='', metric=False):
     labels = dataset + 'labels/'
     # Initialize CSV
     csv_file = outdir + 'estimated_depth.csv'
+
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
         if metric:
-            writer.writerow(['filename', 'object', 'estimated_depth', 'true_depth', 'inference_time'])
+            writer.writerow(['filename', 'object', 'estimated_mean_depth', 'estimated_center_depth', 'true_depth', 'inference_time'])
         else:
             writer.writerow(['filename', 'mean_error', 'inference_time'])
 
@@ -50,13 +51,14 @@ def evaluate(depth_estimator=None, model='', model_type='', metric=False):
         # Visualize results
         id = '_' + file[-36:-33] # take 3 letters as ID hash for each image
         name = file[:-44]+id
-        #depth_estimator.create_pointcloud(frame, depth, name, outdir+'pointclouds/')
-        #depth_image = depth_estimator.create_depthmap(frame, depth, False, name, outdir+'depthmaps/')
-        #depth_image = cv2.resize(depth_image, (960, 300)) # W, H
-        #cv2.imshow("Depth map", depth_image)
+        if i < 10: # save 10 example images
+            #depth_estimator.create_pointcloud(frame, depth, name, outdir+'pointclouds/')
+            depth_image = depth_estimator.create_depthmap(frame, depth, False, name, outdir+'depthmaps/')
+            depth_image = cv2.resize(depth_image, (960, 300)) # W, H
+            cv2.imshow("Depth map", depth_image)
 
-        if cv2.waitKey(100) & 0xFF == ord('q'):
-            break
+            if cv2.waitKey(100) & 0xFF == ord('q'):
+                break
 
 
 def run(depth_estimator=None, source=0):
@@ -95,8 +97,8 @@ if __name__ == "__main__":
     source = 0
 
     # Choose depth estimator and model size
-    model = 'depthanything' # 'midas'
-    model_type = 'vitl' # 'dpt_swin2_tiny_256'
+    model = 'midas' # 'midas'
+    model_type = 'dpt_beit_large_512' # 'dpt_swin2_tiny_256'
 
     assert model in ['depthanything', 'midas', 'metric3d', 'unidepth'], f"Model '{model}' is not available."
     
@@ -126,12 +128,12 @@ if __name__ == "__main__":
         # relative -- dpt_levit_224 ~0.06s, dpt_swin2_tiny_256 ~0.26s ***, midas_v21_small_256 ~0.38s, midas_v21_384 ~0.39s, 
         # dpt_beit_base_384 ~1.45s, dpt_swin2_large_384 ~ 1.9s, dpt_swin_large_384 ~1.2s, dpt_swin2_base_384 ~1.22s, dpt_hybrid_384 ~2s, 
         # dpt_large_384 ~3.1s, dpt_beit_large_384 ~3.5s, dpt_beit_large_512 ~8.8s
-        from midas_zoe import MidasDepthEstimator
+        from midas import MidasDepthEstimator
         depth_estimator = MidasDepthEstimator(
             model_type=model_type,
         )
     
-    elif model == 'metric3d':
+    elif model == 'metric3d': # frame shape and depth shape differ -- depth shape is changed in decoder
         print('Metric3D supports only metric depth estimation (CUDA required). Switching to metric estimation.') if not metric else None
         assert model_type in ['vits', 'vitl', 'vitg'], f"Model type '{model_type}' is not available. Available: vits, vitl, vitg"
         types = {'vits': 'metric3d_vit_small', 'vitl': 'metric3d_vit_large', 'vitg': 'metric3d_vit_giant2'}

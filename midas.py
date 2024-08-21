@@ -49,7 +49,7 @@ import time
 # Use the project file packages instead of the conda packages, i.e. add to system path for import
 file = Path(__file__).resolve()
 root = file.parents[0]
-modules = ['midas']
+modules = ['MiDaS']
 for m in modules:
     path = root / m
     if path.exists() and str(path) not in sys.path:
@@ -60,9 +60,9 @@ for m in modules:
     elif str(path) in sys.path:
         print(f"{path} already exists in sys.path")
 
-from midas.run import create_side_by_side, process
-from midas.ZoeDepth.zoedepth.utils.misc import colorize
-from midas.midas.model_loader import load_model
+from MiDaS.run import create_side_by_side, process
+from MiDaS.ZoeDepth.zoedepth.utils.misc import colorize
+from MiDaS.midas.model_loader import load_model
 
 classes = {
     0: 'bottle',
@@ -90,7 +90,7 @@ class MidasDepthEstimator:
 
     def load_model(self):
         if self.metric:
-            torch.hub.help("intel-isl/MiDaS", "DPT_BEiT_L_384", force_reload=True)
+            #torch.hub.help("intel-isl/MiDaS", "DPT_BEiT_L_384", force_reload=True)
             model = torch.hub.load("isl-org/ZoeDepth", self.model_type, pretrained=True)
         else:
             model, self.transform, self.net_w, self.net_h = load_model(self.device, f'MiDaS/weights/{self.model_type}.pt', self.model_type)

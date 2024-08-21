@@ -100,14 +100,7 @@ class MetricDepthEstimator:
             depth, confidence, output_dict = self.model.inference({'input': input})
             end = time.time()
         inference_time = end - start
-
-        # post-process depth
         depth = depth.squeeze().cpu().numpy()
-        print(depth.shape)
-        #height, width = image.shape[:2]
-        #depth = cv2.resize(depth, (width, height))
-        #print(depth.shape, depth.min(), depth.max())
-        
         return depth, inference_time
     
     def create_depthmap(self, image, depth, grayscale, name=None, outdir=None):
@@ -136,30 +129,6 @@ class MetricDepthEstimator:
                 output_path = os.path.join(outdir, name+'.png')
                 cv2.imwrite(output_path, combined_frame)
                 #print(f'Saved depth visualization to {output_path}')
-            return combined_frame
-
-    def _create_depthmap(self, image, depth, grayscale, name, outdir):
-        """ From Midas.run """
-        depth_min = depth.min()
-        depth_max = depth.max()
-        normalized_depth = 255 * (depth - depth_min) / (depth_max - depth_min)
-        normalized_depth *= 3
-
-        right_side = np.repeat(np.expand_dims(normalized_depth, 2), 3, axis=2) / 3
-        if not grayscale:
-            right_side = cv2.applyColorMap(np.uint8(right_side), cv2.COLORMAP_INFERNO)
-
-        if image is None:
-            return right_side
-        else:
-            combined_frame = np.concatenate((image, right_side), axis=1)
-            # Save to output directory if specified
-            if outdir is not None and name is not None:
-                if not os.path.exists(outdir):
-                    os.makedirs(outdir)
-                output_path = os.path.join(outdir, name+'.png')
-                cv2.imwrite(output_path, combined_frame)
-                print(f'Saved depth visualization to {output_path}')
             return combined_frame
         
     def create_pointcloud(self, image, depth, name=None, outdir=None):
@@ -192,20 +161,28 @@ class MetricDepthEstimator:
             o3d.io.write_point_cloud(out_path, pcd)
             print(f'Point cloud saved to {out_path}')
 
-    def create_csv(self, label_file, depth, time):
+
+    def create_csv(self, label_file, depth, frame, time, metric):
         """
         Extract depth from a target ROI (e.g. bounding box).
 
         Parameters:
         label_file (str): Path to the YOLO format label file
         depth (np.array): The depth map of the image
+        time: frame inference time
+        metric (bool): Flag for choosing evaluation method
 
         Returns:
         float: The average error between the predicted mean depth and the true depth across all bounding boxes
         """
-        height, width = depth.shape[:2] # if depth.shape == frame.shape[:2]
-        total_error = 0
-        count = 0
+        
+        # Get W and H
+        if depth.shape[:2] == frame.shape[:2]:
+            height, width = depth.shape[:2]
+        else:
+            depth = cv2.resize(depth, frame.shape[:2])
+            height, width = depth.shape[:2]
+            print(f'Resizing depthmap to fit BBs in original frame...')
 
         # Read YOLO labels from the file
         with open(label_file, 'r') as f:
@@ -213,10 +190,14 @@ class MetricDepthEstimator:
 
         # Store results for CSV output
         results = []
+        true_depths = [] # relative
+        estimated_depths = [] # relative
+        id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
+        total_error = 0
+        count = 0
 
         for line in lines:
             parts = line.strip().split()
-            # YOLO format: class x_center y_center width height (all normalized 0-1)
             class_id, x_center, y_center, bbox_width, bbox_height, true_depth = map(float, parts)
             
             # Convert normalized coordinates to absolute pixel values
@@ -225,6 +206,7 @@ class MetricDepthEstimator:
             bbox_width *= width
             bbox_height *= height
 
+            # ROI depth method
             x = int(x_center - bbox_width / 2)
             y = int(y_center - bbox_height / 2)
             w = int(bbox_width)
@@ -236,32 +218,65 @@ class MetricDepthEstimator:
             x_end = min(x + w, depth.shape[1])
             y_end = min(y + h, depth.shape[0])
 
-            # Extract the ROI from the depth map
+            # Extract the ROI from the depth map and calculate mean depth
             roi_depth = depth[y_start:y_end, x_start:x_end]
-
-            # Calculate the mean depth within the ROI (method should probably be changed later)
             mean_depth = np.mean(roi_depth)
 
-            # Calculate the absolute difference between the mean depth and the true depth
-            depth_difference = abs(mean_depth - true_depth)
+            # Center point depth method
+            center_depth = depth[int(y_center), int(x_center)]
+            
+            if metric:
+                # Calculate the absolute difference between the mean depth and the true depth
+                #depth_difference = abs(mean_depth - true_depth)
+                depth_difference = abs(center_depth - true_depth)
+                total_error += depth_difference
+                results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, center_depth, true_depth, time])
+            else:
+                # Store the depth and object
+                true_depths.append(true_depth)
+                estimated_depths.append(center_depth)
 
-            # Accumulate the error and count
-            total_error += depth_difference
             count += 1
 
-            # Print the mean depth and compare it with the true depth
-            #print(f"{classes[class_id]}: (x: {x}, y: {y}, w: {w}, h: {h})")
-            #print(f"True Depth: {true_depth}")
-            #print(f"Mean Depth: {mean_depth}")
-            #print(f"Depth Difference: {depth_difference}\n")
+        if not metric:
+            # Calculate the true and estimated proportional depths
+            true_proportions = self.compute_proportional_depths(true_depths)
+            estimated_proportions = self.compute_proportional_depths(estimated_depths)
 
-            # Store result for CSV output
-            id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
-            results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, true_depth, time])
+            # Calculate error between true and estimated proportions
+            for key in true_proportions:
+                if key in estimated_proportions:
+                    total_error += abs(true_proportions[key] - estimated_proportions[key])
 
         # Calculate the average error
-        average_error = total_error / count if count != 0 else 0
+        average_error = total_error / count if count > 0 else 0
+        print(f"Average Error: {average_error}")
 
-        # Print and return the average error
-        #print(f"Average Error: {average_error}")
+        if not metric:
+            results.append([os.path.basename(label_file[:-44]) + id, average_error, time])
+        
         return results
+    
+
+    def compute_proportional_depths(self, depth_values):
+        """
+        Computes proportional depths between all pairs of objects in a scene.
+        
+        Parameters:
+        depth_values (list): List of depth values for all objects in the scene
+        
+        Returns:
+        dict: Dictionary containing proportional depths for each object pair
+        """
+        n = len(depth_values)
+        proportional_depths = {}
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                key = f"{i}-{j}"
+                if depth_values[j] != 0:  # Avoid division by zero
+                    proportional_depths[key] = depth_values[i] / depth_values[j]
+                else:
+                    proportional_depths[key] = np.inf
+        
+        return proportional_depths
