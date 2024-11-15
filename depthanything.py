@@ -157,7 +157,71 @@ class DepthAnythingEstimator:
             o3d.io.write_point_cloud(out_path, pcd)
             #print(f'Point cloud saved to {out_path}')
 
-    def create_csv(self, label_file, depth, frame, time, metric):
+
+    def create_csv(self, label_file, depth, frame, time):
+        """
+        Extract depth from a target ROI (e.g. bounding box).
+
+        Parameters:
+        label_file (str): Path to the YOLO format label file
+        depth (np.array): The depth map of the image
+        time: frame inference time
+        metric (bool): Flag for choosing evaluation method
+
+        Returns:
+        float: The average error between the predicted mean depth and the true depth across all bounding boxes
+        """
+        
+        # Get W and H
+        if depth.shape[:2] == frame.shape[:2]:
+            height, width = depth.shape[:2]
+        else:
+            depth = cv2.resize(depth, frame.shape[:2])
+            height, width = depth.shape[:2]
+            print(f'Resizing depthmap to fit BBs in original frame...')
+
+        # Read YOLO labels from the file
+        with open(label_file, 'r') as f:
+            lines = f.readlines()
+
+        # Store results for CSV output
+        results = []
+        id = '_' + label_file[-36:-33] # take 3 letters as ID hash for each image
+
+        for line in lines:
+            parts = line.strip().split()
+            class_id, x_center, y_center, bbox_width, bbox_height, true_depth = map(float, parts)
+            
+            # Convert normalized coordinates to absolute pixel values
+            x_center *= width
+            y_center *= height
+            bbox_width *= width
+            bbox_height *= height
+
+            # ROI depth method
+            x = int(x_center - bbox_width / 2)
+            y = int(y_center - bbox_height / 2)
+            w = int(bbox_width)
+            h = int(bbox_height)
+
+            # Ensure the bounding box coordinates are within the image dimensions
+            x_start = max(x, 0)
+            y_start = max(y, 0)
+            x_end = min(x + w, depth.shape[1])
+            y_end = min(y + h, depth.shape[0])
+
+            # Get mean depth from ROI, and center depth
+            roi_depth = depth[y_start:y_end, x_start:x_end]
+            mean_depth = np.mean(roi_depth)
+            center_depth = depth[int(y_center), int(x_center)]
+            
+            # Save depths to results
+            results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, center_depth, true_depth, time])
+        
+        return results
+
+
+    def _create_csv(self, label_file, depth, frame, time, metric):
         """
         Extract depth from a target ROI (e.g. bounding box).
 
@@ -224,7 +288,7 @@ class DepthAnythingEstimator:
                 # Calculate the absolute difference between the mean depth and the true depth
                 #depth_difference = abs(mean_depth - true_depth)
                 depth_difference = abs(center_depth - true_depth)
-                total_error += depth_difference
+                total_error += depth_difference # only for printing below, not written to csv. averaged at the bottom
                 results.append([os.path.basename(label_file[:-44]) + id, classes[class_id], mean_depth, center_depth, true_depth, time])
             else:
                 # Store the depth and object
@@ -241,7 +305,7 @@ class DepthAnythingEstimator:
             # Calculate error between true and estimated proportions
             for key in true_proportions:
                 if key in estimated_proportions:
-                    total_error += abs(true_proportions[key] - estimated_proportions[key])
+                    total_error += abs(true_proportions[key] - estimated_proportions[key]) # averaged below
 
         # Calculate the average error
         average_error = total_error / count if count > 0 else 0
@@ -252,8 +316,7 @@ class DepthAnythingEstimator:
         
         return results
     
-
-    def compute_proportional_depths(self, depth_values):
+    def _compute_proportional_depths(self, depth_values):
         """
         Computes proportional depths between all pairs of objects in a scene.
         
@@ -269,8 +332,8 @@ class DepthAnythingEstimator:
         for i in range(n):
             for j in range(i + 1, n):
                 key = f"{i}-{j}"
-                if depth_values[j] != 0:  # Avoid division by zero
-                    proportional_depths[key] = depth_values[i] / depth_values[j]
+                if depth_values[i] != 0:  # Avoid division by zero
+                    proportional_depths[key] = depth_values[j] / depth_values[i] # j / i, because this is disparity, i.e. inverse depth 1/depth
                 else:
                     proportional_depths[key] = np.inf
         

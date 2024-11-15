@@ -21,16 +21,13 @@ def evaluate(depth_estimator=None, model='', model_type='', metric=False):
 
     with open(csv_file, mode='w', newline='') as f:
         writer = csv.writer(f)
-        if metric:
-            writer.writerow(['filename', 'object', 'estimated_mean_depth', 'estimated_center_depth', 'true_depth', 'inference_time'])
-        else:
-            writer.writerow(['filename', 'mean_error', 'inference_time'])
+        writer.writerow(['filename', 'object', 'estimated_mean_depth', 'estimated_center_depth', 'true_depth', 'inference_time'])
 
     
     # Loop over dataset
     for i, file in enumerate(os.listdir(images)):
 
-        print(f'Image {i+1}/477') # 477 images in testing dataset
+        print(f'Image {i+1}/{len(os.listdir(images))}') # dynamically get the number of images in the dataset
 
         # Read the image
         frame = cv2.imread(images+file)
@@ -41,7 +38,7 @@ def evaluate(depth_estimator=None, model='', model_type='', metric=False):
         # Perform depth estimation
         depth, inference_time = depth_estimator.predict_depth(frame)
         labelfile = labels + file[:-3] + 'txt'
-        results = depth_estimator.create_csv(labelfile, depth, frame, inference_time, metric)
+        results = depth_estimator.create_csv(labelfile, depth, frame, inference_time)
 
         # Append results to CSV
         with open(csv_file, mode='a', newline='') as f:
@@ -92,13 +89,13 @@ def run(depth_estimator=None, source=0):
 
 if __name__ == "__main__":
     
-    metric = False
+    metric = True
     eval = True
     source = 0
 
     # Choose depth estimator and model size
-    model = 'midas' # 'midas'
-    model_type = 'dpt_beit_large_512' # 'dpt_swin2_tiny_256'
+    model = 'unidepth' # 'midas'
+    model_type = 'cnvnxtl' # 'dpt_swin2_tiny_256'
 
     assert model in ['depthanything', 'midas', 'metric3d', 'unidepth'], f"Model '{model}' is not available."
     
